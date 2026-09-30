@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "HireFlow - LinkedIn Hiring Post Scraper",
+  "version": "1.0.0",
+  "description": "Extract structured hiring posts and recruiter contact emails from LinkedIn search results.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HireFlow - LinkedIn Hiring Post Extractor",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "activeTab",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "http://localhost:8080/*",
+    "http://localhost:8088/*",
+    "http://localhost:8086/*",
+    "https://*.onrender.com/*"
+  ]
+}
