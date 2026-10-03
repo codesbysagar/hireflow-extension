@@ -26,6 +26,7 @@ export const STORAGE_KEYS = {
   POSTS: 'hireflow_saved_posts',
   SETTINGS: 'hireflow_settings',
   JWT_TOKEN: 'jwtToken',
+  REFRESH_TOKEN: 'refreshToken',
   CURRENT_USER: 'currentUser',
   MATCH_RESULTS: 'hireflow_match_results',
 } as const;

@@ -117,27 +117,27 @@ describe('Auth & Background Ingestion and Polling', () => {
     it('submits scraped batch with Bearer token and returns runId on HTTP 202', async () => {
       mockStorage['jwtToken'] = 'active-jwt-token';
 
-      globalThis.fetch = vi.fn().mockResolvedValueOnce({
-        status: 202,
-        ok: true,
-        json: async () => ({
-          status: 'ACCEPTED',
-          data: { runId: 'run-uuid-987' },
-        }),
+      globalThis.fetch = vi.fn().mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            status: 'ACCEPTED',
+            data: { runId: 'run-uuid-987' },
+          }),
+          {
+            status: 202,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       });
 
       const payload = { source: 'linkedin', totalScanned: 10, posts: [{ id: 'p1' }] };
       const runId = await submitScrapedBatch(payload);
 
       expect(runId).toBe('run-uuid-987');
-      expect(globalThis.fetch).toHaveBeenCalledWith(`${CONFIG.WORKER_BASE_URL}/jobs/match`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer active-jwt-token',
-        },
-        body: JSON.stringify(payload),
-      });
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      const [req] = (globalThis.fetch as any).mock.calls[0];
+      expect(req.url).toBe(`${CONFIG.WORKER_BASE_URL}/jobs/match`);
+      expect(req.headers.get('Authorization')).toBe('Bearer active-jwt-token');
     });
 
     it('polls job run status until COMPLETED and returns matched results', async () => {
@@ -162,52 +162,59 @@ describe('Auth & Background Ingestion and Polling', () => {
       // Mock sequence: 1st poll -> PROCESSING, 2nd poll -> COMPLETED
       globalThis.fetch = vi
         .fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            data: { status: 'PROCESSING', runId: 'run-uuid-987' },
-          }),
+        .mockImplementationOnce(async () => {
+          return new Response(
+            JSON.stringify({
+              data: { status: 'PROCESSING', runId: 'run-uuid-987' },
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            data: {
-              status: 'COMPLETED',
-              runId: 'run-uuid-987',
-              results: mockCompletedResults,
-            },
-          }),
+        .mockImplementationOnce(async () => {
+          return new Response(
+            JSON.stringify({
+              data: {
+                status: 'COMPLETED',
+                runId: 'run-uuid-987',
+                results: mockCompletedResults,
+              },
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
         });
 
       const results = await pollJobRunStatus('run-uuid-987', 15000);
 
       expect(results).toEqual(mockCompletedResults);
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        `${CONFIG.WORKER_BASE_URL}/jobs/runs/run-uuid-987`,
-        {
-          headers: {
-            Authorization: 'Bearer active-jwt-token',
-          },
-        }
-      );
+      const [pollReq] = (globalThis.fetch as any).mock.calls[0];
+      expect(pollReq.url).toBe(`${CONFIG.WORKER_BASE_URL}/jobs/runs/run-uuid-987`);
+      expect(pollReq.headers.get('Authorization')).toBe('Bearer active-jwt-token');
     });
 
     it('throws error when job run status returns FAILED', async () => {
       mockStorage['jwtToken'] = 'active-jwt-token';
 
-      globalThis.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          data: {
-            status: 'FAILED',
-            runId: 'run-uuid-987',
-            errorMessage: 'Candidate resume not found in master service',
-          },
-        }),
+      globalThis.fetch = vi.fn().mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            data: {
+              status: 'FAILED',
+              runId: 'run-uuid-987',
+              errorMessage: 'Candidate resume not found in master service',
+            },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       });
 
       await expect(pollJobRunStatus('run-uuid-987', 5000)).rejects.toThrow(

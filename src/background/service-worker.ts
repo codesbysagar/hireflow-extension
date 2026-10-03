@@ -4,9 +4,11 @@
  * and exponential backoff polling with full jitter.
  */
 
+import axios from 'axios';
 import { CONFIG } from '../shared/config.js';
 import { getAuthToken } from '../shared/auth.js';
 import { storage } from '../shared/storage.js';
+import { apiClient } from '../shared/api.js';
 import type { ExtensionMessage, MatchResults } from '../shared/types.js';
 
 // Setup extension on installation
@@ -29,25 +31,25 @@ export async function submitScrapedBatch(scrapedPayload: unknown): Promise<strin
     throw new Error('UNAUTHENTICATED: Please log in first via the extension popup.');
   }
 
-  const res = await fetch(`${CONFIG.WORKER_BASE_URL}/jobs/match`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(scrapedPayload),
-  });
+  try {
+    const res = await apiClient.post(`${CONFIG.WORKER_BASE_URL}/jobs/match`, scrapedPayload);
+    const body = res.data;
+    if (res.status !== 202) {
+      throw new Error(body.message || `Failed to submit scraping batch (HTTP ${res.status})`);
+    }
 
-  const body = await res.json();
-  if (res.status !== 202) {
-    throw new Error(body.message || `Failed to submit scraping batch (HTTP ${res.status})`);
+    if (!body.data?.runId) {
+      throw new Error('Server accepted batch but did not return a valid runId');
+    }
+
+    return body.data.runId;
+  } catch (err: any) {
+    if (axios.isAxiosError(err) && err.response) {
+      const data = err.response.data as any;
+      throw new Error(data?.message || `Failed to submit scraping batch (HTTP ${err.response.status})`);
+    }
+    throw err;
   }
-
-  if (!body.data?.runId) {
-    throw new Error('Server accepted batch but did not return a valid runId');
-  }
-
-  return body.data.runId;
 }
 
 /**
@@ -56,6 +58,10 @@ export async function submitScrapedBatch(scrapedPayload: unknown): Promise<strin
  */
 export async function pollJobRunStatus(runId: string, maxTimeoutMs = 60000): Promise<MatchResults> {
   const token = await getAuthToken();
+  if (!token) {
+    throw new Error('UNAUTHENTICATED: Please log in first via the extension popup.');
+  }
+
   const startTime = Date.now();
   let delay = 1500; // 1.5s starting delay
   const maxDelay = 8000; // Max 8s interval
@@ -66,18 +72,18 @@ export async function pollJobRunStatus(runId: string, maxTimeoutMs = 60000): Pro
     const jitteredDelay = Math.floor(Math.random() * delay);
     await new Promise((resolve) => setTimeout(resolve, jitteredDelay));
 
-    // 2. Fetch run status
-    const res = await fetch(`${CONFIG.WORKER_BASE_URL}/jobs/runs/${runId}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Polling failed with HTTP ${res.status}`);
+    // 2. Fetch run status using apiClient (which automatically refreshes token on 401)
+    let res;
+    try {
+      res = await apiClient.get(`${CONFIG.WORKER_BASE_URL}/jobs/runs/${runId}`);
+    } catch (err: any) {
+      if (axios.isAxiosError(err) && err.response) {
+        throw new Error(`Polling failed with HTTP ${err.response.status}`);
+      }
+      throw err;
     }
 
-    const json = await res.json();
+    const json = res.data;
     const run = json.data;
 
     if (!run) {

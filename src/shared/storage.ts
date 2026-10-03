@@ -109,6 +109,41 @@ class StorageService {
     }
   }
 
+  async getRefreshToken(): Promise<string | null> {
+    if (!this.hasChromeStorage()) return null;
+    try {
+      const res = await chrome.storage.local.get(STORAGE_KEYS.REFRESH_TOKEN);
+      return (res[STORAGE_KEYS.REFRESH_TOKEN] as string) || null;
+    } catch (e) {
+      console.warn('[HireFlow] Failed to read refresh token from storage:', e);
+      return null;
+    }
+  }
+
+  async setRefreshToken(token: string): Promise<void> {
+    if (!this.hasChromeStorage()) return;
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEYS.REFRESH_TOKEN]: token });
+    } catch (e) {
+      console.warn('[HireFlow] Failed to save refresh token to storage:', e);
+    }
+  }
+
+  async setAuthTokens(tokens: { accessToken: string; refreshToken?: string }): Promise<void> {
+    if (!this.hasChromeStorage()) return;
+    try {
+      const updateData: Record<string, string> = {
+        [STORAGE_KEYS.JWT_TOKEN]: tokens.accessToken,
+      };
+      if (tokens.refreshToken) {
+        updateData[STORAGE_KEYS.REFRESH_TOKEN] = tokens.refreshToken;
+      }
+      await chrome.storage.local.set(updateData);
+    } catch (e) {
+      console.warn('[HireFlow] Failed to save auth tokens to storage:', e);
+    }
+  }
+
   async getCurrentUser(): Promise<any | null> {
     if (!this.hasChromeStorage()) return null;
     try {
@@ -134,6 +169,7 @@ class StorageService {
     try {
       await chrome.storage.local.remove([
         STORAGE_KEYS.JWT_TOKEN,
+        STORAGE_KEYS.REFRESH_TOKEN,
         STORAGE_KEYS.CURRENT_USER,
       ]);
     } catch (e) {

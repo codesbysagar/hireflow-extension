@@ -52,7 +52,7 @@ export const App: React.FC = () => {
   // Track if AI analysis should immediately run when scraping finishes
   const autoAnalyzeRef = useRef<boolean>(false);
 
-  // Check persisted auth session
+  // Check persisted auth session and listen to changes (e.g. auto logout when refresh token expires)
   useEffect(() => {
     (async () => {
       try {
@@ -71,6 +71,26 @@ export const App: React.FC = () => {
         setIsAuthLoading(false);
       }
     })();
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      const handleStorageChange = (
+        changes: { [key: string]: chrome.storage.StorageChange },
+        areaName: string
+      ) => {
+        if (areaName === 'local') {
+          if ('jwtToken' in changes) {
+            setAuthToken((changes.jwtToken.newValue as string) || null);
+          }
+          if ('currentUser' in changes) {
+            setCurrentUser((changes.currentUser.newValue as AuthUser) || null);
+          }
+        }
+      };
+      chrome.storage.onChanged.addListener(handleStorageChange);
+      return () => {
+        chrome.storage.onChanged.removeListener(handleStorageChange);
+      };
+    }
   }, []);
 
   // Verify active tab URL and communicate with content script
