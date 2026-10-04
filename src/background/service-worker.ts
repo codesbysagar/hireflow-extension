@@ -10,6 +10,11 @@ import { getAuthToken } from '../shared/auth.js';
 import { storage } from '../shared/storage.js';
 import { apiClient } from '../shared/api.js';
 import type { ExtensionMessage, MatchResults } from '../shared/types.js';
+import {
+  MATCH_BATCH_SIZE,
+  MATCH_BATCH_INTERVAL_MS,
+  MATCH_BATCH_JITTER_MS,
+} from '../shared/constants.js';
 
 // Setup extension on installation
 if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
@@ -106,6 +111,62 @@ export async function pollJobRunStatus(runId: string, maxTimeoutMs = 60000): Pro
   throw new Error('Job matching timed out. The worker is still processing in the background.');
 }
 
+/**
+ * Splits posts into groups of MATCH_BATCH_SIZE and submits one match request per
+ * group, spaced by MATCH_BATCH_INTERVAL_MS with +/- jitter. Each run is polled as
+ * soon as it is submitted; results are merged into a single MatchResults.
+ * e.g. 150 posts => 30 requests.
+ */
+export async function matchInBatches(
+  payload: any,
+  batchSize = MATCH_BATCH_SIZE,
+  intervalMs = MATCH_BATCH_INTERVAL_MS,
+  jitterMs = MATCH_BATCH_JITTER_MS
+): Promise<MatchResults> {
+  const posts: unknown[] = Array.isArray(payload?.posts) ? payload.posts : [];
+  if (posts.length <= batchSize) {
+    const runId = await submitScrapedBatch(payload);
+    return pollJobRunStatus(runId);
+  }
+
+  const chunks: unknown[][] = [];
+  for (let i = 0; i < posts.length; i += batchSize) {
+    chunks.push(posts.slice(i, i + batchSize));
+  }
+
+  const polls: Promise<MatchResults>[] = [];
+  try {
+    for (let i = 0; i < chunks.length; i++) {
+      if (i > 0) {
+        const jitter = Math.round((Math.random() * 2 - 1) * jitterMs);
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, intervalMs + jitter)));
+      }
+      const runId = await submitScrapedBatch({
+        ...payload,
+        totalMatched: chunks[i].length,
+        posts: chunks[i],
+      });
+      const p = pollJobRunStatus(runId);
+      p.catch(() => {}); // avoid unhandled rejection; awaited below
+      polls.push(p);
+    }
+  } catch (err) {
+    await Promise.allSettled(polls);
+    throw err;
+  }
+
+  const all = await Promise.all(polls);
+  const matchedJobs = all.flatMap((r) => r.matchedJobs ?? []);
+  return {
+    ...all[0],
+    runId: all[all.length - 1].runId,
+    candidateName: all.find((r) => r.candidateName)?.candidateName,
+    totalRelevantJobs: matchedJobs.length,
+    totalScanned: payload?.totalScanned ?? posts.length,
+    matchedJobs,
+  };
+}
+
 // Listen for messages from content scripts or popup
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
@@ -118,8 +179,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
             await chrome.action.setBadgeBackgroundColor({ color: '#8B5CF6' }); // Purple
           }
 
-          const runId = await submitScrapedBatch(message.payload);
-          const results = await pollJobRunStatus(runId);
+          const results = await matchInBatches(message.payload);
 
           // Persist results for popup display
           await storage.setMatchResults(results);

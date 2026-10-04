@@ -19,6 +19,11 @@ export const MAX_IDLE_RETRIES = 6;
 export const MAX_SCROLL_ATTEMPTS = 60;
 export const MUTATION_TIMEOUT_MS = 3000;
 
+// Job match request batching (posts per request, interval between requests, +/- jitter)
+export const MATCH_BATCH_SIZE = 5;
+export const MATCH_BATCH_INTERVAL_MS = 5000;
+export const MATCH_BATCH_JITTER_MS = 1000;
+
 // Storage Keys
 export const STORAGE_KEYS = {
   PROGRESS: 'hireflow_scan_progress',
