@@ -1,6 +1,6 @@
 # HireFlow — LinkedIn Hiring Post Scraper Chrome Extension
 
-![HireFlow Logo](public/hireflow-logo-transparent.png)
+![HireFlow Logo](public/hireflow-logo-full.png)
 
 A production-ready Google Chrome extension (Manifest V3) built with React, TypeScript, and Vite. **HireFlow** helps engineers, job seekers, and recruiters extract structured hiring posts containing publicly visible contact emails directly from LinkedIn post search results.
 
